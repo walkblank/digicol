@@ -64,13 +64,18 @@ def mergeImage(x, y):
 
     print("himage len", len(himage))
     k = cv2.hconcat(himage)
-    cv2.imwrite(id+'.jpg', k)
+    cv2.imwrite('full.jpg', k)
 
 
 def getImage(url):
     id = readItemId(url)
     x,y,w = getImageXY(id)
     print('x,y,w:', x,y,w, id)
+    os.mkdir(id)
+    os.chdir(id)
+    readSepImage(id, x,y,w)
+    mergeImage(x,y)
+    os.chdir('..')
 
 # id = readItemId('https://digicol.dpm.org.cn/cultural/detail?id=3516b0263d0348ed9b6f293af0eb3bb0')
 # print(id)
@@ -80,12 +85,14 @@ def getImage(url):
 # Image.open(id+'.jpg').convert('RGB').save(id+'11.webp', "WEBP")
 
 # id = readItemId('https://digicol.dpm.org.cn/cultural/detail?id=385eda37203444eca1fb9f5feb402d9f')
-id = readItemId('https://digicol.dpm.org.cn/cultural/detail?id=d621723a6dc247f39a96602e6e360bff')
-print(id)
-x,y,w = getImageXY(id)
-print('x,y,w: ', x,y,w)
-os.mkdir(id)
-os.chdir(id)
-readSepImage(id, x, y, w)
-mergeImage(x, y)
-os.chdir('..')
+# id = readItemId('https://digicol.dpm.org.cn/cultural/detail?id=d621723a6dc247f39a96602e6e360bff')
+# print(id)
+# x,y,w = getImageXY(id)
+# print('x,y,w: ', x,y,w)
+# os.mkdir(id)
+# os.chdir(id)
+# readSepImage(id, x, y, w)
+# mergeImage(x, y)
+# os.chdir('..')
+
+getImage('https://digicol.dpm.org.cn/cultural/detail?id=d2f8727ae67e43e8bfc874b58cff5ab9')
