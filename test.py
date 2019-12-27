@@ -1,7 +1,9 @@
+import os
 import requests
 import cv2
+import numpy as np
 from lxml import etree
-import os
+import retry
 
 url_prefix = 'https://shuziwenwu-1259446244.cos.ap-beijing.myqcloud.com/relic/'
 
@@ -50,6 +52,21 @@ def readSepImage(id, x, y, w):
                 f.write(page.content)
                 f.close()
 
+def readAndMergeImage(id, x, y, w):
+    vseg_image = []
+    himage = []
+    vimage = '' 
+    for j in range(0, y+1):
+        for k in range(0, x+1):
+            page = requests.get(url_prefix +id+ '/image-bundle/'+str(w)+'/'+ str(j) + '_'+ str(k) + '.jpg')
+            vseg_image.append(cv2.imdecode(np.asarray(bytearray(page.content), dtype='uint8'), cv2.IMREAD_COLOR))
+        vimage = cv2.vconcat(vseg_image)
+        himage.append(vimage)
+        vseg_image.clear()
+    fullImg = cv2.hconcat(himage)
+    cv2.imwrite(id+'.jpg', fullImg)
+
+
 def mergeImage(x, y):
     vseg_image = []
     himage = []
@@ -58,7 +75,6 @@ def mergeImage(x, y):
         for j in range(0, x+1):
             vseg_image.append(cv2.imread(str(i)+'_'+str(j)+'.jpg'))
         vimage = cv2.vconcat(vseg_image)
-        # cv2.imwrite(str(i)+'.jpg', vimage)
         himage.append(vimage)
         vseg_image.clear() 
 
@@ -69,30 +85,12 @@ def mergeImage(x, y):
 
 def getImage(url):
     id = readItemId(url)
-    x,y,w = getImageXY(id)
-    print('x,y,w:', x,y,w, id)
-    os.mkdir(id)
-    os.chdir(id)
-    readSepImage(id, x,y,w)
-    mergeImage(x,y)
-    os.chdir('..')
+    if id:
+        x,y,w = getImageXY(id)
+        print('x,y,w:', x,y,w, id)
+        if not os.path.exists(id): os.mkdir(id)
+        os.chdir(id)
+        readAndMergeImage(id, x,y,w)
+        os.chdir('..')
 
-# id = readItemId('https://digicol.dpm.org.cn/cultural/detail?id=3516b0263d0348ed9b6f293af0eb3bb0')
-# print(id)
-# x,y,w = getImageXY(id) 
-# readSepImage(id, x, y, w)
-# mergeImage(x,y)
-# Image.open(id+'.jpg').convert('RGB').save(id+'11.webp', "WEBP")
-
-# id = readItemId('https://digicol.dpm.org.cn/cultural/detail?id=385eda37203444eca1fb9f5feb402d9f')
-# id = readItemId('https://digicol.dpm.org.cn/cultural/detail?id=d621723a6dc247f39a96602e6e360bff')
-# print(id)
-# x,y,w = getImageXY(id)
-# print('x,y,w: ', x,y,w)
-# os.mkdir(id)
-# os.chdir(id)
-# readSepImage(id, x, y, w)
-# mergeImage(x, y)
-# os.chdir('..')
-
-getImage('https://digicol.dpm.org.cn/cultural/detail?id=d2f8727ae67e43e8bfc874b58cff5ab9')
+getImage('https://digicol.dpm.org.cn/cultural/detail?id=a73efc637f364c11be6a4261ee269ba7')
