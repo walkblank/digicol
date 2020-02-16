@@ -1,98 +1,130 @@
+import os
+import shutil
+
+from lxml import etree
+import numpy as np
 import requests
 import cv2
-from lxml import etree
-import os
+import json
+import threading
 
 url_prefix = 'https://shuziwenwu-1259446244.cos.ap-beijing.myqcloud.com/relic/'
+queryUrl   = 'https://digicol.dpm.org.cn/cultural/queryList'
 
-def readItemId(url):
-    page = requests.get(url)
-    # print(page.text)
-    pageHtml = etree.HTML(page.text)
-    idUrl = pageHtml.xpath('//div[@id="picBox"]/ul/li/a/img/@src')
-    if idUrl:
-        id = idUrl[0].split('//')[1].split('/')[2]
-    else:
-        id = ''
-        print("not found")
-    return id
+sem = threading.Semaphore(10)
 
+# class DownloadManager():
+    # pass
 
-def getImageXY(id)->(int,int,int):
-    x = y = x = 0
-    for i in range(0, 1000):
-        page = requests.get(url_prefix +id+ '/image-bundle/'+str(i)+ '/0_0.jpg')
-        if page.status_code == 404:
-            print("max w = ", i -1)
-            w = i -1
-            break
-    for i in range(0, 1000):
-        page = requests.get(url_prefix +id+ '/image-bundle/'+str(w) + '/'+ str(i) +'_0.jpg')
-        # print(page.status_code)
-        if page.status_code == 404:
-            print("yindex = ", i-1)
-            y = i-1
-            break
-    for i in range(0, 1000):
-        page = requests.get(url_prefix +id+ '/image-bundle/'+str(w)+'/0_'+ str(i) + '.jpg')
-        # print(page.status_code)
-        if(page.status_code == 404):
-            print("xindex = ", i-1)
-            x = i-1
-            break
-    return x,y,w
+class DigiColDownloader(threading.Thread):
+    def __init__(self, uuid, name, relicnum):
+        threading.Thread.__init__(self)
+        self.uuid = uuid
+        self.name = name
+        self.relicnum = relicnum
+        self.tmpPath = 'images/' + self.name + '/tmp-' + self.relicnum.replace('/', '-') + '/'
+        self.fileName = 'images/' + self.name + '/' + self.relicnum.replace('/', '-') + '.jpg'
+        sem.acquire()
 
-def readSepImage(id, x, y, w):
-    for j in range(0, x+1):
-        for k in range(0, y + 1):
-            page = requests.get(url_prefix +id+ '/image-bundle/'+str(w)+'/'+ str(k) + '_'+ str(j) + '.jpg')
-            with open(str(k)+'_'+str(j)+'.jpg', 'wb') as f:
-                f.write(page.content)
-                f.close()
+    def run(self):
+        if not os.path.isdir(self.tmpPath): 
+            os.makedirs(self.tmpPath)
+        if not os.path.isfile(self.fileName): 
+            self.getItemImage(self.uuid)
+        shutil.rmtree(self.tmpPath)
+        sem.release()
 
-def mergeImage(x, y):
-    vseg_image = []
-    himage = []
-    vimage = ''
-    for i in range(0, y+1):
+    @staticmethod
+    def readItemId(url):
+        page = requests.get(url)
+        # print(page.text)
+        pageHtml = etree.HTML(page.text)
+        idUrl = pageHtml.xpath('//div[@id="picBox"]/ul/li/a/img/@src')
+        if idUrl:
+            id = idUrl[0].split('//')[1].split('/')[2]
+        else:
+            id = ''
+            print("not found")
+        return id
+
+    @staticmethod
+    def getImageXY(id)->(int,int,int):
+        print(id)
+        x = y = w = 0
+        for i in range(0, 1000):
+            page = requests.get(url_prefix +id+ '/image-bundle/'+str(i)+ '/0_0.jpg')
+            if page.status_code == 404:
+                print("max w = ", i -1)
+                w = i -1
+                break
+        for i in range(0, 1000):
+            page = requests.get(url_prefix +id+ '/image-bundle/'+str(w) + '/'+ str(i) +'_0.jpg')
+            # print(page.status_code)
+            if page.status_code == 404:
+                print("yindex = ", i-1)
+                y = i-1
+                break
+        for i in range(0, 1000):
+            page = requests.get(url_prefix +id+ '/image-bundle/'+str(w)+'/0_'+ str(i) + '.jpg')
+            # print(page.status_code)
+            if(page.status_code == 404):
+                print("xindex = ", i-1)
+                x = i-1
+                break
+        return x,y,w
+
+    def readSepImage(self, id, x, y, w):
         for j in range(0, x+1):
-            vseg_image.append(cv2.imread(str(i)+'_'+str(j)+'.jpg'))
-        vimage = cv2.vconcat(vseg_image)
-        # cv2.imwrite(str(i)+'.jpg', vimage)
-        himage.append(vimage)
-        vseg_image.clear() 
+            for k in range(0, y + 1):
+                if not os.path.isfile(self.tmpPath+str(k)+'_'+str(j)+'.jpg'): 
+                    page = requests.get(url_prefix +id+ '/image-bundle/'+str(w)+'/'+ str(k) + '_'+ str(j) + '.jpg')
+                    # with open('images/'+self.name+'/tmp' + self.relicnum.replace('/','-') + '/'+str(k)+'_'+str(j)+'.jpg', 'wb') as f:
+                    with open(self.tmpPath + str(k)+'_'+str(j)+'.jpg', 'wb') as f:
+                        f.write(page.content)
+                        f.close()
 
-    print("himage len", len(himage))
-    k = cv2.hconcat(himage)
-    cv2.imwrite('full.jpg', k)
+    def mergeImage(self, x, y):
+        vseg_image = []
+        himage = []
+        vimage = ''
+        for i in range(0, y+1):
+            for j in range(0, x+1):
+                # vseg_image.append(cv2.imdecode(np.fromfile('images/'+self.name +'/tmp/'+str(i)+'_'+str(j)+'.jpg', dtype=np.uint8), -1))
+                vseg_image.append(cv2.imdecode(np.fromfile(self.tmpPath +str(i)+'_'+str(j)+'.jpg', dtype=np.uint8), -1))
+            vimage = cv2.vconcat(vseg_image)
+            himage.append(vimage)
+            vseg_image.clear() 
 
+        print("himage len", len(himage))
+        k = cv2.hconcat(himage)
+        cv2.imencode('.jpg', k)[1].tofile(self.fileName)
 
-def getImage(url):
-    id = readItemId(url)
-    x,y,w = getImageXY(id)
-    print('x,y,w:', x,y,w, id)
-    os.mkdir(id)
-    os.chdir(id)
-    readSepImage(id, x,y,w)
-    mergeImage(x,y)
-    os.chdir('..')
+    def getItemImage(self, uuid):
+        self.getImage('https://digicol.dpm.org.cn/cultural/detail?id='+uuid)
 
-# id = readItemId('https://digicol.dpm.org.cn/cultural/detail?id=3516b0263d0348ed9b6f293af0eb3bb0')
-# print(id)
-# x,y,w = getImageXY(id) 
-# readSepImage(id, x, y, w)
-# mergeImage(x,y)
-# Image.open(id+'.jpg').convert('RGB').save(id+'11.webp', "WEBP")
+    def getImage(self, url):
+        id = self.readItemId(url)
+        x,y,w = self.getImageXY(id)
+        print('x,y,w:', x,y,w, id)
+        # if os.curdir
+        self.readSepImage(id, x,y,w)
+        self.mergeImage(x,y)
 
-# id = readItemId('https://digicol.dpm.org.cn/cultural/detail?id=385eda37203444eca1fb9f5feb402d9f')
-# id = readItemId('https://digicol.dpm.org.cn/cultural/detail?id=d621723a6dc247f39a96602e6e360bff')
-# print(id)
-# x,y,w = getImageXY(id)
-# print('x,y,w: ', x,y,w)
-# os.mkdir(id)
-# os.chdir(id)
-# readSepImage(id, x, y, w)
-# mergeImage(x, y)
-# os.chdir('..')
+def getItemUrls(cateUrl):
+    pageCnt = -1 
+    curPageIdx = 0
+    data = {'page':'1', 'keyWord':'', 'authorizeStatus':'false', 'hasImage':'true', 'cateList':'16'}
+    while pageCnt != curPageIdx:
+        data['page'] = curPageIdx+1
+        respData = requests.post(cateUrl, data)
+        # print(respData.text)
+        jsonData = json.loads(respData.text)
+        pageCnt = jsonData["pagecount"]
+        curPageIdx = jsonData["currentPage"]
+        for item in jsonData['rows']:
+            print(item['name'], item["uuid"], item["culturalRelicNo"])
+            dl = DigiColDownloader(item['uuid'], item['name'], item['culturalRelicNo'])
+            dl.start()
 
-getImage('https://digicol.dpm.org.cn/cultural/detail?id=d2f8727ae67e43e8bfc874b58cff5ab9')
+# getImage('https://digicol.dpm.org.cn/cultural/detail?id=d2f8727ae67e43e8bfc874b58cff5ab9')
+getItemUrls(queryUrl)
